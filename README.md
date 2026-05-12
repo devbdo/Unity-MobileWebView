@@ -30,7 +30,7 @@ A lightweight, cross-platform **native WebView plugin** for Unity that renders r
 2. Click the **+** button → **Add package from git URL…**
 3. Paste the repository URL:
    ```
-   https://github.com/AvcisoftDev/Unity-MobileWebView.git
+   https://github.com/devbdo/Unity-MobileWebView.git
    ```
 4. Click **Add** — Unity will import the package automatically
 
