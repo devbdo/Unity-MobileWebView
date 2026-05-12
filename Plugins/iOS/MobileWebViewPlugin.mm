@@ -77,23 +77,33 @@ static void SendToUnity(NSString* method, NSString* message) {
 
 @interface MWVProgressObserver : NSObject
 @property (nonatomic, strong) WKWebView* observedWebView;
+@property (nonatomic, assign) BOOL isObserving;
 @end
 
 @implementation MWVProgressObserver
 
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _isObserving = NO;
+    }
+    return self;
+}
+
 - (void)startObserving:(WKWebView*)wv {
+    [self stopObserving];
     self.observedWebView = wv;
     [wv addObserver:self forKeyPath:@"estimatedProgress"
             options:NSKeyValueObservingOptionNew context:nil];
+    self.isObserving = YES;
 }
 
 - (void)stopObserving {
-    if (self.observedWebView) {
-        @try {
-            [self.observedWebView removeObserver:self forKeyPath:@"estimatedProgress"];
-        } @catch (NSException* e) {}
-        self.observedWebView = nil;
+    if (self.isObserving && self.observedWebView) {
+        [self.observedWebView removeObserver:self forKeyPath:@"estimatedProgress"];
+        self.isObserving = NO;
     }
+    self.observedWebView = nil;
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object
@@ -113,6 +123,31 @@ static void SendToUnity(NSString* method, NSString* message) {
 
 static MWVNavigationDelegate* _navDelegate = nil;
 static MWVProgressObserver* _progressObserver = nil;
+
+// Forward declaration
+static void CloseWebView(void);
+
+#pragma mark - Close Helper (forward-declared for use in CloseWebView and button target)
+
+@interface MWVCloseHelper : NSObject
++ (instancetype)shared;
+- (void)closeTapped;
+@end
+
+@implementation MWVCloseHelper
+
++ (instancetype)shared {
+    static MWVCloseHelper* _shared = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ _shared = [[self alloc] init]; });
+    return _shared;
+}
+
+- (void)closeTapped {
+    CloseWebView();
+}
+
+@end
 
 #pragma mark - Close Action
 
@@ -191,23 +226,10 @@ void _MobileWebView_Open(const char* urlCStr, const char* receiverCStr,
         [closeBtn setTitle:@"\u2715" forState:UIControlStateNormal];
         closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:20];
         [closeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        [closeBtn addTarget:[NSBlockOperation blockOperationWithBlock:^{
-            CloseWebView();
-        }] action:@selector(main) forControlEvents:UIControlEventTouchUpInside];
-        // Use a helper for close action
-        static dispatch_block_t closeAction;
-        closeAction = ^{ CloseWebView(); };
-        // simpler approach: use a tap gesture
-        closeBtn.tag = 999;
+        [closeBtn addTarget:[MWVCloseHelper shared]
+                     action:@selector(closeTapped)
+           forControlEvents:UIControlEventTouchUpInside];
         [_topBar addSubview:closeBtn];
-
-        // Use a tap recognizer for close
-        UITapGestureRecognizer* tap = [[UITapGestureRecognizer alloc]
-            initWithTarget:nil action:nil];
-        // Actually, let's use a proper approach with a wrapper
-        // We'll handle it via a simple UIControl subclass trick
-        [closeBtn removeTarget:nil action:nil
-              forControlEvents:UIControlEventAllEvents];
 
         // Progress bar
         _progressView = [[UIProgressView alloc]
@@ -243,12 +265,6 @@ void _MobileWebView_Open(const char* urlCStr, const char* receiverCStr,
         [_containerView addSubview:_webView];
         [parentView addSubview:_containerView];
 
-        // Close button action via helper class
-        // (re-do close button properly)
-        [closeBtn addTarget:[MWVCloseHelper shared]
-                     action:@selector(closeTapped)
-           forControlEvents:UIControlEventTouchUpInside];
-
         // Load URL
         NSURL* url = [NSURL URLWithString:urlStr];
         if (url) {
@@ -264,24 +280,3 @@ void _MobileWebView_Close(void) {
 }
 
 } // extern "C"
-
-// Helper class for close button action
-@interface MWVCloseHelper : NSObject
-+ (instancetype)shared;
-- (void)closeTapped;
-@end
-
-@implementation MWVCloseHelper
-
-+ (instancetype)shared {
-    static MWVCloseHelper* _shared = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{ _shared = [[self alloc] init]; });
-    return _shared;
-}
-
-- (void)closeTapped {
-    CloseWebView();
-}
-
-@end
